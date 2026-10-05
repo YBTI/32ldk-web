@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#16121d">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta name="description" content="ボードゲーム「32LDK」をスマホでオンライン対戦できる非公式版">
+<title>32LDK オンライン</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+/* Layout: one-screen haunted floor plan — status bar, seat strip, spirit pile + door grid, hand tray pinned at bottom. Deliberately single dark theme. */
+:root{
+  --night:#16121d; --room:#211b2b; --wall:#352c43; --bone:#efe6d4; --bone-ink:#2b2231;
+  --fg:#ece5f2; --muted:#a294b3; --candle:#f0b55c; --blood:#c8434f; --calm:#7cc3a2;
+  --door:#5a3d2e; --door-hi:#7a5440;
+  --f-display:"Dela Gothic One","Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+  --f-body:"Zen Kaku Gothic New","Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--night);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.55;-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit}
+h1,h2,h3{font-family:var(--f-display);font-weight:400;text-wrap:balance;margin:0}
+.wrap{max-width:560px;margin:0 auto;padding-inline:16px;padding-block:16px 24px;min-height:100%;display:flex;flex-direction:column;gap:16px}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.btn{appearance:none;border:1px solid var(--wall);background:var(--room);border-radius:10px;padding:12px 16px;font-weight:700;cursor:pointer;min-height:46px;transition:transform .08s,background .15s}
+.btn:active{transform:scale(.98)}
+.btn:focus-visible,.card:focus-visible,.door:focus-visible,.seat:focus-visible{outline:2px solid var(--candle);outline-offset:2px}
+.btn.primary{background:var(--candle);color:#24180b;border-color:var(--candle)}
+.btn.danger{background:transparent;border-color:var(--blood);color:#ffb3b9}
+.btn.ghost{background:transparent}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.full{width:100%}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.row > .grow{flex:1;min-width:0}
+input[type=text]{width:100%;background:var(--night);border:1px solid var(--wall);color:var(--fg);border-radius:10px;padding:12px;font:inherit;font-size:16px;min-height:46px}
+input[type=text]:focus{outline:2px solid var(--candle);outline-offset:1px}
+label.lbl{display:block;font-size:12px;letter-spacing:.08em;color:var(--muted);margin-bottom:6px}
+.panel{background:var(--room);border:1px solid var(--wall);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.seg{display:flex;border:1px solid var(--wall);border-radius:10px;overflow:hidden}
+.seg button{flex:1;background:transparent;border:0;padding:10px 6px;font-size:13px;font-weight:700;cursor:pointer;min-height:42px}
+.seg button[aria-pressed=true]{background:var(--wall);color:var(--candle)}
+.toggle{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
+.toggle input{width:20px;height:20px;accent-color:var(--candle);margin-top:2px;flex:none}
+
+/* Hero */
+.hero{display:flex;flex-direction:column;gap:6px;padding-top:8px}
+.logo{font-family:var(--f-display);font-size:64px;line-height:1;letter-spacing:.02em;color:var(--bone);display:flex;align-items:baseline;gap:6px}
+.logo b{font-weight:400;color:var(--candle);font-size:.62em}
+.tag{color:var(--muted);font-size:14px}
+.plan{display:grid;grid-template-columns:repeat(8,1fr);gap:3px;margin-top:6px}
+.plan i{aspect-ratio:1;border:1px solid var(--wall);border-radius:2px;display:block}
+.plan i.lit{background:var(--candle);border-color:var(--candle);opacity:.85}
+
+.roomlist{display:flex;flex-direction:column;gap:8px}
+.roomitem{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--wall);border-radius:10px;background:var(--night);cursor:pointer;text-align:left;width:100%}
+.roomitem .code{font-family:var(--f-display);font-size:20px;color:var(--candle);letter-spacing:.08em}
+
+/* Lobby */
+.bigcode{font-family:var(--f-display);font-size:48px;letter-spacing:.14em;color:var(--candle);line-height:1}
+.plist{display:flex;flex-direction:column;gap:6px;margin:0;padding:0;list-style:none}
+.plist li{display:flex;gap:10px;align-items:center;padding:8px 10px;border-radius:8px;background:var(--night)}
+.dot{width:10px;height:10px;border-radius:50%;flex:none}
+.badge{font-size:11px;padding:2px 8px;border-radius:99px;border:1px solid var(--wall);color:var(--muted);white-space:nowrap}
+.badge.me{border-color:var(--candle);color:var(--candle)}
+
+/* Game */
+.game{max-width:560px;margin:0 auto;min-height:100%;display:flex;flex-direction:column}
+.gbar{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--wall);font-size:13px;position:sticky;top:env(safe-area-inset-top,0px);background:var(--night);z-index:5}
+.gbar .muted{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.gbar .ttl{flex:none;font-family:var(--f-display);font-size:18px;color:var(--bone)}
+.gbar .sp{flex:1}
+.iconbtn{white-space:nowrap;flex:none;background:transparent;border:1px solid var(--wall);border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;min-height:34px}
+.seats{display:flex;gap:8px;overflow-x:auto;padding:12px 16px 4px;scrollbar-width:none}
+.seats::-webkit-scrollbar{display:none}
+.seat{flex:none;min-width:108px;max-width:150px;text-align:left;border:1px solid var(--wall);background:var(--room);border-radius:12px;padding:8px 10px;display:flex;flex-direction:column;gap:2px;cursor:default;position:relative}
+.seat.turn{border-color:var(--candle);box-shadow:0 0 0 1px var(--candle) inset}
+.seat.pick{cursor:pointer}
+.seat.sel{background:#3b2a1a;border-color:var(--candle)}
+.seat .nm{font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.seat .ct{font-family:var(--f-display);font-size:20px;line-height:1.1;color:var(--bone)}
+.seat .ct small{font-family:var(--f-body);font-size:11px;color:var(--muted);margin-left:2px}
+.seat .kn{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.seat .mad{font-size:11px;color:#e3a0a8}
+.seat .now{position:absolute;top:-8px;right:8px;background:var(--candle);color:#24180b;font-size:10px;font-weight:700;padding:1px 6px;border-radius:99px}
+
+.field{display:grid;grid-template-columns:auto 1fr;gap:16px;padding:12px 16px;align-items:start}
+.spirit{display:flex;flex-direction:column;align-items:center;gap:6px;width:96px}
+.spirit .lbl2,.doors-h{font-size:11px;letter-spacing:.12em;color:var(--muted)}
+.pile{display:flex;flex-wrap:wrap;gap:3px;justify-content:center;max-width:96px}
+.pile span{font-size:11px;font-weight:700;padding:0 5px;border-radius:4px;background:var(--wall);color:var(--bone);font-variant-numeric:tabular-nums}
+.doors{display:grid;grid-template-columns:repeat(auto-fill,minmax(40px,1fr));gap:6px;min-width:0}
+.door{aspect-ratio:3/4.4;border-radius:5px 5px 2px 2px;border:1px solid #2a1c14;background:linear-gradient(180deg,var(--door-hi),var(--door));position:relative;cursor:default;padding:0}
+.door::before{content:"";position:absolute;inset:14% 18% 48% 18%;border:1px solid rgba(0,0,0,.28);border-radius:2px}
+.door::after{content:"";position:absolute;right:16%;top:56%;width:5px;height:5px;border-radius:50%;background:var(--candle)}
+.door.pick{cursor:pointer}
+.door.pick:hover{filter:brightness(1.15)}
+.door.sel{outline:2px solid var(--candle);outline-offset:2px;filter:brightness(1.3)}
+.doors-wrap{display:flex;flex-direction:column;gap:6px;min-width:0}
+
+/* Cards */
+.card{--p:.5;position:relative;width:58px;aspect-ratio:5/7.4;border-radius:8px;background:color-mix(in oklab,var(--bone),var(--blood) calc(var(--p)*58%));color:var(--bone-ink);display:flex;flex-direction:column;align-items:center;justify-content:center;border:2px solid transparent;flex:none;cursor:default;padding:0;user-select:none;box-shadow:0 2px 0 rgba(0,0,0,.35)}
+.card .n{font-family:var(--f-display);font-size:24px;line-height:1;font-variant-numeric:tabular-nums}
+.card svg{width:44%;height:auto;opacity:calc(.25 + var(--p)*.6);margin-top:4px}
+.card .eye{position:absolute;top:3px;left:4px;font-size:9px;font-weight:700;opacity:.65}
+.card.big{width:84px;border-radius:12px}
+.card.big .n{font-size:36px}
+.card.pick{cursor:pointer}
+.card.sel{border-color:var(--candle);transform:translateY(-8px);box-shadow:0 8px 0 rgba(0,0,0,.35),0 0 0 2px var(--candle)}
+.card.empty{background:transparent;border:2px dashed var(--wall);box-shadow:none}
+.card.flip{animation:flip .45s ease-out}
+@keyframes flip{from{transform:rotateY(90deg) scale(.9);opacity:.3}to{transform:none;opacity:1}}
+
+.news{margin:8px 16px 0;padding:10px 12px;border-radius:10px;background:var(--room);border:1px solid var(--wall);font-size:13px;display:flex;gap:10px;align-items:center;min-height:44px}
+.news.bad{border-color:var(--blood);background:color-mix(in oklab,var(--room),var(--blood) 18%)}
+.news.good{border-color:color-mix(in oklab,var(--wall),var(--calm) 50%)}
+.news.pulse{animation:pulse .6s ease-out}
+@keyframes pulse{0%{transform:scale(1.03)}100%{transform:none}}
+.news .k{font-family:var(--f-display);font-size:14px;white-space:nowrap}
+.news.bad .k{color:#ffb3b9}
+.news.good .k{color:var(--calm)}
+
+.log{margin:8px 16px 0;font-size:12px;color:var(--muted);max-height:92px;overflow:auto;display:flex;flex-direction:column;gap:2px}
+
+.tray{margin-top:auto;background:var(--night);border-top:1px solid var(--wall);margin-top:12px;padding:12px 16px calc(14px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:10px;z-index:4}
+.tray-h{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:var(--muted)}
+.tray-h b{font-family:var(--f-display);font-weight:400;font-size:15px;color:var(--bone)}
+.hand{display:flex;gap:6px;overflow-x:auto;padding-top:10px;padding-bottom:4px;min-height:104px;align-items:flex-end}
+.hint{font-size:13px;min-height:20px}
+.hint.ok{color:var(--calm)}
+.hint.ng{color:#ffb3b9}
+
+/* Overlays */
+.ov{position:fixed;inset:0;background:rgba(10,8,14,.86);z-index:20;display:flex;align-items:center;justify-content:center;padding:16px;overflow:auto}
+.sheet{width:100%;max-width:480px;background:var(--room);border:1px solid var(--wall);border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:14px;max-height:100%;overflow:auto}
+.tbl-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px;font-variant-numeric:tabular-nums}
+th,td{padding:8px 6px;border-bottom:1px solid var(--wall);text-align:center}
+th:first-child,td:first-child{text-align:left}
+tr.win td{color:var(--candle);font-weight:700}
+.rules{font-size:14px}
+.rules h3{font-size:16px;color:var(--candle);margin-top:6px}
+.rules ol,.rules ul{padding-left:1.3em;margin:4px 0}
+.rules table{font-size:13px}
+.toast{position:fixed;left:50%;bottom:calc(140px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--bone);color:var(--bone-ink);padding:10px 16px;border-radius:10px;font-weight:700;font-size:14px;z-index:30;max-width:calc(100% - 32px)}
+.handoff-name{font-family:var(--f-display);font-size:34px;color:var(--bone);line-height:1.2}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media (max-width:360px){.card{width:50px}.card .n{font-size:20px}.spirit{width:84px}.card.big{width:76px}}
+html{padding-top:env(safe-area-inset-top,0px)}
+</style>
+</head><body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="ghost" viewBox="0 0 40 44"><path d="M20 2C10 2 4 9.5 4 19v21l5-4 5 4 6-4 6 4 5-4 5 4V19C36 9.5 30 2 20 2z" fill="currentColor"/><circle cx="14.5" cy="19" r="3" fill="var(--bone)"/><circle cx="25.5" cy="19" r="3" fill="var(--bone)"/></symbol>
+</svg>
+
+<div id="app"></div>
+<div id="ovl"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/engine.js"></script>
+<script>
+const {DEAL,isRun,spiritTop,newGame,nextRound,act,winners}=E;
+/* ===================== UTIL ===================== */
+const app=document.getElementById('app'), ovl=document.getElementById('ovl');
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function lsGet(k){try{return localStorage.getItem(k)}catch(e){return null}}
+function lsSet(k,v){try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}}
+let toastT;function toast(m){document.querySelector('.toast')?.remove();const d=document.createElement('div');d.className='toast';d.textContent=m;document.body.appendChild(d);clearTimeout(toastT);toastT=setTimeout(()=>d.remove(),2400)}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const COLORS=['#f0b55c','#7cc3a2','#8fb3f0','#e58fb7','#c9a0f0','#e8d36a'];
+function cardHTML(v,cls='',extra=''){return `<div class="card ${cls}" style="--p:${((v-1)/31).toFixed(3)}" ${extra}><span class="n">${v}</span><svg viewBox="0 0 40 44" aria-hidden="true"><use href="#ghost"/></svg></div>`}
+
+/* ===================== STATE ===================== */
+let view='home';             // home | lobby | game | localSetup | local
+let room=null,roomCode=null,connected=false,spectating=false;
+let local=null, localReveal=false;
+let sel={type:null,i:-1,vals:[],t:-1};
+let seenSeq=-1, busy=false;
+let myName=lsGet('ldk_name')||'';
+let myId=lsGet('ldk_pid');
+if(!myId||!/^[A-Za-z0-9_-]{8,64}$/.test(myId)){myId='p'+Array.from(crypto.getRandomValues(new Uint8Array(12)),b=>b.toString(16).padStart(2,'0')).join('');lsSet('ldk_pid',myId)}
+const inviteCode=(new URLSearchParams(location.search).get('room')||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,4);
+
+function clearSel(){sel={type:null,i:-1,vals:[],t:-1}}
+
+/* ===================== ONLINE (Socket.IO) ===================== */
+const socket=io({transports:['websocket','polling']});
+function emit(ev,data){
+  return new Promise(res=>{
+    if(!connected){toast('サーバーに接続中です。少し待ってからもう一度');return res({err:'offline'})}
+    socket.timeout(10000).emit(ev,data||{},(err,r)=>{
+      if(err){toast('通信に失敗しました。もう一度お試しください');return res({err:'timeout'})}
+      if(r&&r.err)toast(r.err);
+      res(r||{});
+    });
+  });
+}
+socket.on('connect',async()=>{
+  connected=true;
+  const code=roomCode||lsGet('ldk_room');
+  if(code){
+    const r=await emit('join',{pid:myId,name:myName,code});
+    if(r.err){if(r.gone){lsSet('ldk_room',null);if(roomCode)leaveLocal()}}
+    else{roomCode=r.code;spectating=!!r.spectate}
+  }
+  if(view==='home')render();
+});
+socket.on('disconnect',()=>{connected=false;if(view==='home'||view==='lobby'||view==='game')render()});
+socket.on('state',v=>{
+  if(view==='local'||view==='localSetup')return;
+  const prev=room&&room.status;
+  room=v;roomCode=v.code;lsSet('ldk_room',v.code);
+  view=v.status==='lobby'?'lobby':'game';
+  if(prev!==v.status)clearSel();
+  render();
+});
+socket.on('closed',(d)=>{toast(d&&d.kicked?'ホストにより部屋から外されました':'部屋が解散されました');leaveLocal()});
+
+async function createRoom(){
+  if(!needName())return;
+  const r=await emit('create',{pid:myId,name:myName});
+  if(!r.err){roomCode=r.code;spectating=false}
+}
+async function joinRoom(code){
+  if(!needName())return;
+  code=(code||'').trim().toUpperCase();
+  if(!/^[A-Z0-9]{4}$/.test(code)){toast('4文字の部屋コードを入力してください');return}
+  const r=await emit('join',{pid:myId,name:myName,code});
+  if(!r.err){roomCode=r.code;spectating=!!r.spectate;if(r.spectate)toast('ゲーム中のため観戦で入ります')}
+}
+function leaveLocal(){room=null;roomCode=null;lsSet('ldk_room',null);if(view!=='local'&&view!=='localSetup')view='home';history.replaceState(null,'',location.pathname);render()}
+async function leaveRoom(){await emit('leave');leaveLocal()}
+function mySeat(){return room?room.you:-1}
+function inviteURL(code){return location.origin+location.pathname+'?room='+code}
+async function shareInvite(code){
+  const url=inviteURL(code), text=`32LDKで遊ぼう！部屋コード ${code}`;
+  if(navigator.share){try{await navigator.share({title:'32LDK',text,url});return}catch(e){if(e&&e.name==='AbortError')return}}
+  try{await navigator.clipboard.writeText(url);toast('招待リンクをコピーしました')}catch(e){toast(url)}
+}
+
+/* ===================== RENDER ===================== */
+function render(){
+  ovl.innerHTML='';
+  if(view==='home')return renderHome();
+  if(view==='lobby')return renderLobby();
+  if(view==='localSetup')return renderLocalSetup();
+  if(view==='game')return renderGame(room,mySeat(),'online');
+  if(view==='local')return renderLocal();
+}
+function needName(){
+  const el=document.getElementById('nick');const v=(el?el.value:myName).trim().slice(0,12);
+  if(!v){toast('ニックネームを入力してください');el&&el.focus();return false}
+  myName=v;lsSet('ldk_name',v);return true;
+}
+function connPill(){return connected?'':`<div class="badge" style="align-self:flex-start;border-color:var(--blood);color:#ffb3b9">サーバーに接続中…（初回は最大1分ほどかかります）</div>`}
+function renderHome(){
+  const lit=[3,12,17,22,26,31];
+  app.innerHTML=`<div class="wrap">
+    <div class="hero">
+      <div class="logo">32<b>LDK</b></div>
+      <div class="tag">悪霊迫るチキンレース ・ 3〜6人 ・ 約15分</div>
+      <div class="plan" aria-hidden="true">${Array.from({length:32},(_,i)=>`<i class="${lit.includes(i)?'lit':''}"></i>`).join('')}</div>
+    </div>
+    <section class="panel">
+      <h2 style="font-size:20px">${inviteCode?`部屋 <span style="color:var(--candle);letter-spacing:.1em">${esc(inviteCode)}</span> に招待されています`:'オンライン対戦'}</h2>
+      ${connPill()}
+      <div><label class="lbl" for="nick">ニックネーム</label><input id="nick" type="text" maxlength="12" value="${esc(myName)}" placeholder="例：アチワ" autocomplete="nickname"></div>
+      ${inviteCode?`<button class="btn primary full" id="bInv">この部屋に参加する</button>`:''}
+      <button class="btn ${inviteCode?'':'primary'} full" id="bCreate">部屋を作る</button>
+      <div class="row"><input id="codeIn" type="text" class="grow" maxlength="4" placeholder="部屋コード（4文字）" value="${esc(inviteCode)}" style="text-transform:uppercase;flex:1;width:auto" autocapitalize="characters"><button class="btn" id="bJoin">参加</button></div>
+      <p class="muted small" style="margin:0">部屋を作ると招待リンクが出ます。LINEなどで送れば、リンクを開くだけで参加できます。</p>
+    </section>
+    <section class="panel">
+      <h2 style="font-size:20px">1台で遊ぶ</h2>
+      <p class="muted small" style="margin:0">スマホを順番に回して遊ぶモードです。手番ごとに目隠し画面が入ります。通信は使いません。</p>
+      <button class="btn full" id="bLocal">${local&&local.status!=='finished'?'続きから遊ぶ':'メンバーを決めて始める'}</button>
+      ${local&&local.status!=='finished'?'<button class="btn ghost full" id="bLocalNew">新しく始める</button>':''}
+    </section>
+    <button class="btn ghost full" id="bRules">ルールを読む</button>
+  </div>`;
+  const q=id=>document.getElementById(id);
+  q('bCreate').onclick=createRoom;
+  if(q('bInv'))q('bInv').onclick=()=>joinRoom(inviteCode);
+  q('bJoin').onclick=()=>joinRoom(q('codeIn').value);
+  q('codeIn').onkeydown=e=>{if(e.key==='Enter')joinRoom(e.target.value)};
+  q('nick').onchange=e=>{myName=e.target.value.trim().slice(0,12);lsSet('ldk_name',myName)};
+  q('bLocal').onclick=()=>{view=local&&local.status!=='finished'?'local':'localSetup';localReveal=false;render()};
+  if(q('bLocalNew'))q('bLocalNew').onclick=()=>{view='localSetup';render()};
+  q('bRules').onclick=showRules;
+}
+function settingsHTML(s,editable){
+  const dis=editable?'':'disabled';
+  return `<div><div class="lbl">ゲーム数</div><div class="seg" role="group">
+    ${[['short','1ゲーム'],['normal','2ゲーム（通常）'],['long','人数分']].map(([k,l])=>`<button data-mode="${k}" aria-pressed="${s.mode===k}" ${dis}>${l}</button>`).join('')}
+  </div></div>
+  <label class="toggle"><input type="checkbox" id="chain" ${s.chain?'checked':''} ${dis}><span><b>連続出しルール</b><br><span class="muted small">霊の一番上より「ちょうど1大きい数字」を含めて出したら、もう一度自分の番。</span></span></label>`;
+}
+function bindSettings(onChange){
+  app.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>onChange({mode:b.dataset.mode}));
+  const c=document.getElementById('chain');if(c)c.onchange=()=>onChange({chain:c.checked});
+}
+function renderLobby(){
+  if(!room){app.innerHTML=`<div class="wrap"><p class="muted">部屋に接続しています…</p><button class="btn" id="bBack">戻る</button></div>`;document.getElementById('bBack').onclick=leaveLocal;return}
+  const me=mySeat(), isHost=room.host===me&&me>=0, n=room.players.length;
+  app.innerHTML=`<div class="wrap">
+    <div class="row"><button class="iconbtn" id="bLeave">← 退出</button><span class="grow"></span><button class="iconbtn" id="bRules">ルール</button></div>
+    ${connPill()}
+    <section class="panel" style="align-items:flex-start">
+      <div class="lbl" style="margin:0">部屋コード</div>
+      <div class="bigcode">${esc(room.code)}</div>
+      <button class="btn primary" id="bShare">招待リンクを送る</button>
+      <span class="muted small" style="word-break:break-all">${esc(inviteURL(room.code))}</span>
+    </section>
+    <section class="panel">
+      <div class="row"><h2 style="font-size:18px" class="grow">参加者</h2><span class="badge">${n}/6人</span></div>
+      <ul class="plist">${room.players.map((p,i)=>`<li><span class="dot" style="background:${COLORS[i%6]};${p.online?'':'opacity:.3'}"></span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name)}</span>${p.online?'':'<span class="badge">オフライン</span>'}${i===room.host?'<span class="badge">ホスト</span>':''}${i===me?'<span class="badge me">あなた</span>':''}${isHost&&i!==me?`<button class="iconbtn" data-kick="${i}" aria-label="${esc(p.name)}を外す">外す</button>`:''}</li>`).join('')}</ul>
+      ${n<3?`<div class="muted small">あと${3-n}人以上集まると始められます。</div>`:''}
+    </section>
+    <section class="panel">${settingsHTML(room.settings,isHost)}${isHost?'':'<div class="muted small">設定はホストが決めます。</div>'}</section>
+    ${isHost?`<button class="btn primary full" id="bStart" ${n<3?'disabled':''}>ゲームを始める（${n}人）</button>`:`<div class="muted small" style="text-align:center">${me>=0?'ホストの開始を待っています…':'観戦中'}</div>`}
+  </div>`;
+  document.getElementById('bLeave').onclick=leaveRoom;
+  document.getElementById('bRules').onclick=showRules;
+  document.getElementById('bShare').onclick=()=>shareInvite(room.code);
+  if(isHost){
+    bindSettings(patch=>emit('settings',patch));
+    app.querySelectorAll('[data-kick]').forEach(b=>b.onclick=()=>emit('kick',{seat:+b.dataset.kick}));
+    const b=document.getElementById('bStart');if(b)b.onclick=()=>emit('start');
+  }
+}
+
+/* ---------- Game view (shared by online & local) ---------- */
+function renderGame(g,seat,mode){
+  if(!g)return;
+  const n=g.players.length, myTurn=g.status==='playing'&&seat>=0&&g.turn===seat&&!busy;
+  const me=seat>=0?g.players[seat]:null;
+  const t0=spiritTop(g);
+  const animate=g.seq!==seenSeq; seenSeq=g.seq;
+
+  // seats
+  const seatsH=g.players.map((p,i)=>{
+    const known=p.hand.filter(c=>c.k).map(c=>c.v).sort((a,b)=>a-b);
+    const pick=myTurn&&i!==seat&&p.hand.length>0;
+    return `<button class="seat ${g.turn===i&&g.status==='playing'?'turn':''} ${pick?'pick':''} ${sel.type==='steal'&&sel.t===i?'sel':''}" data-seat="${i}" ${pick?'':'tabindex="-1"'} aria-label="${esc(p.name)} 手札${p.hand.length}枚">
+      ${g.turn===i&&g.status==='playing'?'<span class="now">手番</span>':''}
+      <span class="nm"><span class="dot" style="display:inline-block;background:${COLORS[i%6]};margin-right:5px"></span>${esc(p.name)}${i===seat?'（あなた）':''}${p.online===false?'<span class="muted"> ・不在</span>':''}</span>
+      <span class="ct">${p.hand.length}<small>枚</small></span>
+      <span class="kn">${i===seat?'&nbsp;':known.length?'判明 '+known.join('・'):'判明なし'}</span>
+      <span class="mad">狂気値 ${p.total}</span>
+    </button>`}).join('');
+
+  // last action
+  let newsH='';
+  const L=g.last;
+  if(L){
+    const who=esc(g.players[L.seat].name);
+    const pl=L.played.length>1?`${L.played[0]}〜${L.played[L.played.length-1]}`:L.played[0];
+    const how=L.src==='door'?'扉を開けて':L.src==='hand'?'手札から':`${esc(g.players[L.t].name)}の手札を引いて`;
+    newsH= L.result==='suppress'
+      ? `<div class="news good ${animate?'pulse':''}"><span class="k">抑え込んだ</span><span>${who}が${how}「${pl}」→ ${L.top}より強い${L.chain?'。<b>連続出し！</b>もう一度':''}</span></div>`
+      : `<div class="news bad ${animate?'pulse':''}"><span class="k">取り憑かれた</span><span>${who}が${how}「${pl}」→ ${L.top}より弱く、霊${L.taken}枚を引き取った</span></div>`;
+  }else{
+    newsH=`<div class="news"><span class="k" style="color:var(--candle)">開始</span><span>${esc(g.players[g.turn].name)}から時計回りに進みます</span></div>`;
+  }
+
+  // hint / action
+  let hint='',hintCls='',canGo=false;
+  if(g.status!=='playing'){hint='ゲーム終了'}
+  else if(seat<0){hint=`観戦中：${esc(g.players[g.turn].name)} の番`}
+  else if(!myTurn){hint=`${esc(g.players[g.turn].name)} の番です`}
+  else if(sel.type==='door'){hint='扉を開けて出します（中身は運次第）';canGo=true}
+  else if(sel.type==='steal'){hint=`${esc(g.players[sel.t].name)}の手札から1枚ランダムに引いて出します`;canGo=true}
+  else if(sel.type==='hand'&&sel.vals.length){
+    if(!isRun(sel.vals)){hint='複数枚は連番でないと出せません';hintCls='ng'}
+    else{const mx=Math.max(...sel.vals);canGo=true;
+      if(mx>t0){hint=`${t0}より大きいので抑え込めます`+(g.settings.chain&&sel.vals.includes(t0+1)?'・連続出し発動':'');hintCls='ok'}
+      else{hint=`${t0}より小さいので霊${g.spirit.length}枚を引き取ります`;hintCls='ng'}}
+  }
+  else{hint=g.doors.length?'扉・自分の手札・相手の席から1つ選んでください':'自分の手札か相手の席を選んでください'}
+
+  const hand=me?[...me.hand].sort((a,b)=>a.v-b.v):[];
+  app.innerHTML=`<div class="game">
+    <div class="gbar">
+      <span class="ttl">32LDK</span>
+      <span class="muted">${mode==='online'?'部屋 '+esc(roomCode)+' ・ ':''}第${g.round}/${g.totalRounds}ゲーム</span>
+      <span class="sp"></span>
+      <button class="iconbtn" id="bRules">ルール</button>
+      <button class="iconbtn" id="bExit">退出</button>
+    </div>
+    ${mode==='online'&&!connected?'<div class="news bad" style="margin-top:10px"><span class="k">再接続中</span><span>通信が切れました。自動でつなぎ直しています…</span></div>':''}
+    <div class="seats">${seatsH}</div>
+    ${newsH}
+    <div class="field">
+      <div class="spirit">
+        <div class="lbl2">霊</div>
+        ${cardHTML(t0,'big '+(animate?'flip':''))}
+        <div class="pile" aria-label="霊の山">${g.spirit.map(v=>`<span>${v}</span>`).join('')}</div>
+        <div class="muted small">${g.spirit.length}枚重なり</div>
+      </div>
+      <div class="doors-wrap">
+        <div class="doors-h">扉 残り${g.doors.length}枚 ・ 除外${g.excluded}枚</div>
+        <div class="doors">${g.doors.map((_,i)=>`<button class="door ${myTurn?'pick':''} ${sel.type==='door'&&sel.i===i?'sel':''}" data-door="${i}" aria-label="扉${i+1}" ${myTurn?'':'tabindex="-1"'}></button>`).join('')||'<span class="muted small">扉はすべて開きました</span>'}</div>
+      </div>
+    </div>
+    <div class="log">${(g.log||[]).slice(0,6).map(t=>`<div>${esc(t)}</div>`).join('')}</div>
+    <div class="tray">
+      ${me?`<div class="tray-h"><b>あなたの手札 ${hand.length}枚</b><span>目印は相手に知られている札</span></div>
+      <div class="hand">${hand.length?hand.map(c=>cardHTML(c.v,`${myTurn?'pick':''} ${sel.type==='hand'&&sel.vals.includes(c.v)?'sel':''}`,`data-card="${c.v}" role="button" tabindex="${myTurn?0:-1}"`).replace('<span class="n">',c.k?'<span class="eye">見</span><span class="n">':'<span class="n">')).join(''):'<div class="card empty"></div><span class="muted small" style="align-self:center">手札なし。扉が尽きるまで耐えましょう</span>'}</div>`:''}
+      <div class="hint ${hintCls}">${hint}</div>
+      ${me&&g.status==='playing'?`<button class="btn primary full" id="bGo" ${myTurn&&canGo?'':'disabled'}>${busy?'送信中…':'出す'}</button>`:''}
+    </div>
+  </div>`;
+
+  // bindings
+  document.getElementById('bRules').onclick=showRules;
+  document.getElementById('bExit').onclick=()=>confirmExit(mode);
+  if(myTurn){
+    app.querySelectorAll('[data-door]').forEach(b=>b.onclick=()=>{const i=+b.dataset.door;sel=sel.type==='door'&&sel.i===i?{type:null,i:-1,vals:[],t:-1}:{type:'door',i,vals:[],t:-1};rerender()});
+    app.querySelectorAll('.seat.pick').forEach(b=>b.onclick=()=>{const t=+b.dataset.seat;sel=sel.type==='steal'&&sel.t===t?{type:null,i:-1,vals:[],t:-1}:{type:'steal',i:-1,vals:[],t};rerender()});
+    app.querySelectorAll('[data-card]').forEach(b=>{const f=()=>{const v=+b.dataset.card;if(sel.type!=='hand')sel={type:'hand',i:-1,vals:[],t:-1};sel.vals=sel.vals.includes(v)?sel.vals.filter(x=>x!==v):[...sel.vals,v];if(!sel.vals.length)clearSel();rerender()};b.onclick=f;b.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();f()}}});
+    const go=document.getElementById('bGo');
+    if(go)go.onclick=()=>doAct(mode,seat);
+  }
+  if(g.status==='roundEnd'||g.status==='finished')showScores(g,mode);
+}
+function rerender(){const y=app.querySelector('.hand')?.scrollLeft;render();const h=app.querySelector('.hand');if(h&&y)h.scrollLeft=y}
+function buildAction(){return sel.type==='door'?{type:'door',i:sel.i}:sel.type==='steal'?{type:'steal',t:sel.t}:sel.type==='hand'?{type:'hand',vals:sel.vals.slice()}:null}
+async function doAct(mode,seat){
+  const a=buildAction();if(!a)return;
+  if(mode==='online'){
+    const prev=sel;clearSel();busy=true;render();
+    const r=await emit('act',a);busy=false;
+    if(r.err)sel=prev;
+    render();
+  }else{
+    const err=act(local,seat,a);if(err){toast(err);return}
+    clearSel();saveLocal();
+    if(local.status==='playing'&&local.turn!==seat)localReveal=false;
+    render();
+  }
+}
+function confirmExit(mode){
+  ovl.innerHTML=`<div class="ov"><div class="sheet">
+    <h2 style="font-size:20px">退出しますか？</h2>
+    <p class="muted small" style="margin:0">${mode==='online'?'席はそのまま残ります。同じ部屋コードでいつでも戻れます。':'途中経過はこの端末に保存されます。'}</p>
+    <div class="row"><button class="btn grow" id="cNo">続ける</button><button class="btn danger grow" id="cYes">退出する</button></div>
+  </div></div>`;
+  document.getElementById('cNo').onclick=()=>ovl.innerHTML='';
+  document.getElementById('cYes').onclick=()=>{if(mode==='online')leaveLocal();else{view='home';render()}};
+}
+function showScores(g,mode){
+  const fin=g.status==='finished', w=fin?winners(g):[];
+  const R=g.players[0].scores.length;
+  ovl.innerHTML=`<div class="ov"><div class="sheet">
+    <h2 style="font-size:24px">${fin?'全ゲーム終了':`第${g.round}ゲーム終了`}</h2>
+    ${fin?`<p style="margin:0;font-size:16px"><b style="color:var(--candle)">${w.map(i=>esc(g.players[i].name)).join('・')}</b> の勝ち。いちばん正気を保ちました。</p>`:`<p class="muted small" style="margin:0">残った手札の枚数が狂気値になります。2ゲーム目以降に手札0枚で終えた人は、それまでの合計が0に戻ります。</p>`}
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>名前</th>${Array.from({length:R},(_,r)=>`<th>G${r+1}</th>`).join('')}<th>合計</th></tr></thead>
+      <tbody>${g.players.map((p,i)=>`<tr class="${w.includes(i)?'win':''}"><td>${esc(p.name)}</td>${p.scores.map((c,r)=>`<td>${c}${r>=1&&c===0?'<span class="small"> 正気</span>':''}</td>`).join('')}<td><b>${p.total}</b></td></tr>`).join('')}</tbody>
+    </table></div>
+    ${fin
+      ? `<div class="row"><button class="btn primary grow" id="sAgain">${mode==='online'?'部屋に戻る（再戦）':'同じメンバーで再戦'}</button><button class="btn grow" id="sHome">ホームへ</button></div>`
+      : `<button class="btn primary full" id="sNext">第${g.round+1}ゲームへ</button><button class="btn ghost full" id="sClose">盤面を見る</button>`}
+  </div></div>`;
+  const q=id=>document.getElementById(id);
+  if(q('sClose'))q('sClose').onclick=()=>{ovl.innerHTML='';const t=app.querySelector('.tray');if(t&&!q('sReopen')){const b=document.createElement('button');b.className='btn primary full';b.id='sReopen';b.textContent='得点表と次のゲームへ';b.onclick=()=>showScores(g,mode);t.appendChild(b)}};
+  if(mode==='online'){
+    if(q('sNext'))q('sNext').onclick=()=>emit('next');
+    if(q('sAgain'))q('sAgain').onclick=()=>emit('again');
+    if(q('sHome'))q('sHome').onclick=leaveLocal;
+  }else{
+    if(q('sNext'))q('sNext').onclick=()=>{nextRound(local);localReveal=false;saveLocal();render()};
+    if(q('sAgain'))q('sAgain').onclick=()=>{newGame(local);localReveal=false;saveLocal();render()};
+    if(q('sHome'))q('sHome').onclick=()=>{view='home';render()};
+  }
+}
+
+/* ---------- Local pass-and-play ---------- */
+let setupNames=(()=>{try{const a=JSON.parse(lsGet('ldk_local_names')||'null');if(Array.isArray(a)&&a.length>=3)return a}catch(e){}return ['','','']})();
+let setupSettings={mode:'normal',chain:false};
+try{const s=JSON.parse(lsGet('ldk_local')||'null');if(s&&s.players)local=s}catch(e){}
+function saveLocal(){lsSet('ldk_local',JSON.stringify(local))}
+function renderLocalSetup(){
+  app.innerHTML=`<div class="wrap">
+    <div class="row"><button class="iconbtn" id="bBack">← 戻る</button><span class="grow"></span><button class="iconbtn" id="bRules">ルール</button></div>
+    <h1 style="font-size:28px">1台で遊ぶ</h1>
+    <section class="panel">
+      <div class="lbl" style="margin:0">プレイヤー（時計回りの順・3〜6人）</div>
+      ${setupNames.map((nm,i)=>`<div class="row"><span class="dot" style="background:${COLORS[i]}"></span><input type="text" class="grow" style="flex:1;width:auto" id="pn${i}" maxlength="12" value="${esc(nm)}" placeholder="プレイヤー${i+1}">${setupNames.length>3?`<button class="iconbtn" data-rm="${i}" aria-label="削除">✕</button>`:''}</div>`).join('')}
+      ${setupNames.length<6?'<button class="btn ghost" id="bAdd">＋ プレイヤーを追加</button>':''}
+    </section>
+    <section class="panel">${settingsHTML(setupSettings,true)}</section>
+    <button class="btn primary full" id="bStart">始める（${setupNames.length}人）</button>
+  </div>`;
+  const grab=()=>{setupNames=setupNames.map((_,i)=>document.getElementById('pn'+i).value.trim().slice(0,12))};
+  document.getElementById('bBack').onclick=()=>{grab();view='home';render()};
+  document.getElementById('bRules').onclick=showRules;
+  const add=document.getElementById('bAdd');if(add)add.onclick=()=>{grab();setupNames.push('');render()};
+  app.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{grab();setupNames.splice(+b.dataset.rm,1);render()});
+  bindSettings(p=>{grab();Object.assign(setupSettings,p);render()});
+  document.getElementById('bStart').onclick=()=>{
+    grab();const names=setupNames.map((x,i)=>x||`プレイヤー${i+1}`);
+    lsSet('ldk_local_names',JSON.stringify(setupNames));
+    local={players:names.map((name,i)=>({id:'L'+i,name})),settings:{...setupSettings}};
+    newGame(local);localReveal=false;saveLocal();view='local';seenSeq=-1;render();
+  };
+}
+function renderLocal(){
+  if(!local){view='localSetup';return render()}
+  if(local.status==='playing'&&!localReveal){
+    // handoff screen hides hands
+    renderGame(local,-1,'local');
+    const L=local.last;
+    const who=local.players[local.turn].name;
+    const sameAgain=L&&L.chain&&L.seat===local.turn;
+    ovl.innerHTML=`<div class="ov"><div class="sheet" style="text-align:center;align-items:center">
+      ${L?`<div class="news ${L.result==='suppress'?'good':'bad'}" style="margin:0;width:100%;text-align:left">${app.querySelector('.news').innerHTML}</div>`:''}
+      <div class="muted">${sameAgain?'連続出し！もう一度':'次の手番'}</div>
+      <div class="handoff-name">${esc(who)} さん</div>
+      <p class="muted small" style="margin:0">ほかの人に画面が見えないように受け取ってから押してください。</p>
+      <button class="btn primary full" id="hShow">手札を見る</button>
+      <button class="btn ghost" id="hHome">ホームへ</button>
+    </div></div>`;
+    document.getElementById('hShow').onclick=()=>{localReveal=true;render()};
+    document.getElementById('hHome').onclick=()=>{view='home';render()};
+    return;
+  }
+  renderGame(local,local.status==='playing'?local.turn:-1,'local');
+}
+
+/* ---------- Rules ---------- */
+function showRules(){
+  ovl.innerHTML=`<div class="ov"><div class="sheet rules">
+    <div class="row"><h2 style="font-size:22px" class="grow">32LDK のルール</h2><button class="iconbtn" id="rClose">閉じる</button></div>
+    <p style="margin:0">1〜32の悪霊カードを使うチキンレース。<b>ゲーム終了時の手札をできるだけ少なく</b>するのが目的です。</p>
+    <h3>準備</h3>
+    <div class="tbl-wrap"><table><thead><tr><th>人数</th><th>除外</th><th>手札</th><th>扉</th></tr></thead><tbody>
+      ${[3,4,5,6].map(n=>`<tr><td>${n}人</td><td>${DEAL[n][0]}枚</td><td>${DEAL[n][1]}枚</td><td>${32-DEAL[n][0]-DEAL[n][1]*n-1}枚</td></tr>`).join('')}
+    </tbody></table></div>
+    <p style="margin:0">残りは裏向きの「扉」。扉を1枚めくって中央に置いたものが「霊」です。</p>
+    <h3>手番：カードを出す（どれか1つ）</h3>
+    <ol><li>好きな<b>扉</b>を1枚めくって出す</li><li><b>自分の手札</b>から1枚、または<b>連番</b>なら何枚でも出す</li><li><b>相手</b>を1人選び、その手札からランダムに1枚引いて出す</li></ol>
+    <h3>判定</h3>
+    <ul><li>出したカード（連番なら一番大きい数字）が霊の一番上より<b>大きい</b> → 霊の上に重ねる（抑え込んだ！）</li>
+    <li><b>小さい</b> → 重なっている霊を全部自分の手札に加え、出したカードが新しい霊になる（取り憑かれた！）</li></ul>
+    <h3>終了と得点</h3>
+    <ul><li>最後の扉をめくって判定したら1ゲーム終了。手札が無くなっても抜けずに続きます</li>
+    <li>残った手札の枚数が<b>狂気値</b>。通常は2ゲームの合計が一番少ない人の勝ち</li>
+    <li>2ゲーム目に手札0枚で終えた人は合計が0になる（正気に戻った！）</li>
+    <li>2ゲーム目は、前のゲームで最後の扉をめくった人の左隣から</li></ul>
+    <h3>バリエーション</h3>
+    <ul><li>長時間：人数分のゲームを遊ぶ（3ゲーム目以降も手札0なら合計0）</li><li>短時間：1ゲームのみ</li>
+    <li>連続出し：霊の一番上より1大きい数字を含めて出したら、もう一度自分の番</li></ul>
+    <p class="muted small" style="margin:0">デザイン：ナラセン／発行：ロクジゾー。公式説明書の内容をもとにした非公式のオンライン版です。</p>
+  </div></div>`;
+  document.getElementById('rClose').onclick=()=>{ovl.innerHTML='';if(view==='game'||view==='local'){render()}};
+}
+
+render();
+</script>
+</body></html>
